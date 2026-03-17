@@ -206,7 +206,23 @@ The new platform must connect departments through shared operational truth.
 
 ---
 
-# DL-009 — AI is a later decision-support layer, not the foundation
+# DL-009 — Scope Exclusion: Commerciale
+
+### Decision
+Il reparto commerciale è escluso dalla fase iniziale del progetto.
+
+### Rationale
+- Alta variabilità decisionale
+- Forte dipendenza da esperienza individuale
+- Basso impatto immediato sull'efficienza operativa
+- Priorità a execution layer (produzione, magazzino, logistica)
+
+### Consequences
+- Il sistema parte dagli ordini già acquisiti
+- Easy resta unico punto per offerte e conferme ordine
+- Possibile integrazione futura con AI support (pricing, offerte)
+
+# DL-010 — AI is a later decision-support layer, not the foundation
 
 ## Decision
 AI will be introduced as a support layer after the operational registries, state logic, and event tracking are stable enough.
@@ -233,7 +249,7 @@ AI is expected later for:
 
 ---
 
-# DL-010 — The first implementation perimeter must stay narrow
+# DL-011 — The first implementation perimeter must stay narrow
 
 ## Decision
 The first implementation scope must stay intentionally constrained.
@@ -262,6 +278,42 @@ The previous project stalled partly because the scope became too large relative 
 - Architecture should remain extensible without overbuilding.
 
 ---
+
+# DL-010 — UPR come Production Intelligence Layer
+
+UPR non si limita a determinare la necessità di produzione, ma calcola quantità ottimali considerando:
+- fabbisogno immediato
+- fabbisogni futuri
+- consumo storico
+
+---
+
+# DL-011 — Introduzione Demand Registry
+
+Viene introdotto un registry dedicato alla domanda (storico e previsione) per supportare decisioni di produzione.
+
+---
+
+# DL-012 — Priority Engine
+
+La priorità è dinamica e deriva da:
+- ordine
+- eventi esterni (cliente, magazzino, logistica)
+
+---
+
+# DL-013 — Multi-dimensional State Model
+
+Lo stato delle entità non è lineare ma multidimensionale (produzione, magazzino, logistica).
+
+---
+
+# DL-014 — Parallel Handoff
+
+UPR genera output paralleli:
+- produzione
+- magazzino
+
 
 # Open Questions
 
