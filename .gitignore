@@ -19,5 +19,6 @@ Thumbs.db
 # IDE
 .vscode/
 
-key/
+# PRIVATE Docs
+key.py
 internal_docs/
