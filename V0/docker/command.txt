@@ -1,0 +1,13 @@
+docker compose config
+docker compose up -d
+docker compose logs -f
+docker compose ps
+docker compose down
+
+Questi sono i più importanti:
+
+docker compose config ti mostra la configurazione risolta finale ed è utilissimo per trovare errori
+docker compose up -d avvia tutto in background
+docker compose logs -f segue i log
+docker compose ps mostra i container dello stack
+docker compose down spegne lo stack

@@ -1,0 +1,24 @@
+# version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: nssp_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nssp_user
+      POSTGRES_PASSWORD: nssp_password
+      POSTGRES_DB: nssp_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - nssp_network
+
+volumes:
+  postgres_data:
+
+networks:
+  nssp_network:
+  

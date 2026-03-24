@@ -1,0 +1,5 @@
+DRIVER=     "SQL Server"
+SERVER=     "SERVER\\SQLEXPRESS"
+DATABASE=   "ELFESQL"
+UID=        "sa"
+PWD=        "Elfe1109"
