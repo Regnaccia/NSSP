@@ -8,6 +8,8 @@ __pycache__/
 
 # environment variables
 .env
+V0/env/*.env
+!V0/env/*.env.example
 
 # OS files
 .DS_Store
@@ -21,3 +23,6 @@ Thumbs.db
 
 # PRIVATE Docs
 internal_docs/
+
+# Easy schema inspection output
+V0/debug/easy_schema/
