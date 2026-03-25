@@ -13,7 +13,7 @@ class CustomerBuilder(BaseBuilder):
         result = BuildResult(entity_type=self.entity_type)
         now = self._now()
 
-        session.execute(delete(FactCustomer))
+        result.records_deleted = session.execute(delete(FactCustomer)).rowcount
 
         rows = session.execute(select(SyncCustomer)).scalars().all()
 

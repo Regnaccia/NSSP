@@ -13,7 +13,7 @@ class OrderLineBuilder(BaseBuilder):
         result = BuildResult(entity_type=self.entity_type)
         now = self._now()
 
-        session.execute(delete(FactOrderLine))
+        result.records_deleted = session.execute(delete(FactOrderLine)).rowcount
 
         rows = session.execute(select(SyncOrderLine)).scalars().all()
 

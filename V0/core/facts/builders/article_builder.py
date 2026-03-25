@@ -13,7 +13,7 @@ class ArticleBuilder(BaseBuilder):
         result = BuildResult(entity_type=self.entity_type)
         now = self._now()
 
-        session.execute(delete(FactArticle))
+        result.records_deleted = session.execute(delete(FactArticle)).rowcount
 
         rows = session.execute(select(SyncArticle)).scalars().all()
 

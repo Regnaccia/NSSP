@@ -13,7 +13,7 @@ class OrderBuilder(BaseBuilder):
         result = BuildResult(entity_type=self.entity_type)
         now = self._now()
 
-        session.execute(delete(FactOrder))
+        result.records_deleted = session.execute(delete(FactOrder)).rowcount
 
         rows = session.execute(select(SyncOrderHeader)).scalars().all()
 

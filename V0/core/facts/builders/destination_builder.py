@@ -20,13 +20,18 @@ class DestinationBuilder(BaseBuilder):
         result = BuildResult(entity_type=self.entity_type)
         now = self._now()
 
-        session.execute(delete(FactDestination))
+        result.records_deleted = session.execute(delete(FactDestination)).rowcount
 
         # 1. Destinazioni esplicite da sync_destinations
         destinations = session.execute(select(SyncDestination)).scalars().all()
         customers_with_dest = set()
 
         for row in destinations:
+            if not row.customer_source_id:
+                result.errors.append(
+                    f"destination {row.source_id!r} skipped: customer_source_id is NULL"
+                )
+                continue
             session.add(FactDestination(
                 source_id=self._upper(row.source_id),
                 customer_source_id=self._upper(row.customer_source_id),
@@ -43,8 +48,7 @@ class DestinationBuilder(BaseBuilder):
                 sync_run_id=row.sync_run_id,
             ))
             result.records_built += 1
-            if row.customer_source_id:
-                customers_with_dest.add(self._upper(row.customer_source_id))
+            customers_with_dest.add(self._upper(row.customer_source_id))
 
         # 2. Clienti senza destinazione esplicita → destinazione derivata
         customers = session.execute(select(SyncCustomer)).scalars().all()

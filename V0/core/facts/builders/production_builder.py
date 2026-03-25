@@ -13,7 +13,7 @@ class ProductionBuilder(BaseBuilder):
         result = BuildResult(entity_type=self.entity_type)
         now = self._now()
 
-        session.execute(delete(FactProduction))
+        result.records_deleted = session.execute(delete(FactProduction)).rowcount
 
         rows = session.execute(select(SyncProduction)).scalars().all()
 

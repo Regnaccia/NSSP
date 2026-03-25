@@ -20,7 +20,7 @@ class FactDestination(Base, FactMetaMixin):
     source_id: Mapped[Optional[str]] = mapped_column(String(6), nullable=True, index=True)
     customer_source_id: Mapped[str] = mapped_column(String(6), nullable=False, index=True)
     code: Mapped[Optional[str]] = mapped_column(String(6), nullable=True)
-    name: Mapped[Optional[str]] = mapped_column(String(55), nullable=True)
+    name: Mapped[Optional[str]] = mapped_column(String(110), nullable=True)
     address: Mapped[Optional[str]] = mapped_column(String(55), nullable=True)
     city: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
     postal_code: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
