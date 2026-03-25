@@ -5,8 +5,9 @@ from alembic import context
 from config.settings import MRS_DB_URL
 from db.session import Base
 
-import sync.models         # noqa — registra tutti i modelli sync_* su Base.metadata
-import core.facts.models   # noqa — registra tutti i modelli fact_* su Base.metadata
+import sync.models                  # noqa — registra tutti i modelli sync_* su Base.metadata
+import core.facts.models            # noqa — registra tutti i modelli fact_* su Base.metadata
+import core.computed_facts.models   # noqa — registra tutti i modelli computed_* su Base.metadata
 
 config = context.config
 
