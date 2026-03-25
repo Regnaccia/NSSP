@@ -23,3 +23,4 @@ class FactOrderLine(Base, FactMetaMixin):
     qty_shipped: Mapped[Optional[Decimal]] = mapped_column(Numeric(13, 5), nullable=True)
     qty_packed: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 5), nullable=True)
     customer_line_ref: Mapped[Optional[str]] = mapped_column(String(15), nullable=True)
+    unit_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(13, 4), nullable=True)

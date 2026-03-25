@@ -20,7 +20,7 @@ class OrderLineExtractor(BaseExtractor):
     def fetch_rows(self, easy_conn):
         return easy_conn.execute(text("""
             SELECT ID_TESTATA, NUM_PROGR, ART_COD, ART_DESCR,
-                   DOC_QTOR, DOC_QTEV, DOC_QTAP, RIF_CLIENTE, COLL_RIGA_PREC
+                   DOC_QTOR, DOC_QTEV, DOC_QTAP, RIF_CLIENTE, DOC_PZ_NETTO, COLL_RIGA_PREC
             FROM V_TORDCLI
             ORDER BY ID_TESTATA, NUM_PROGR
         """)).fetchall()
@@ -38,6 +38,7 @@ class OrderLineExtractor(BaseExtractor):
             "qty_shipped": row.DOC_QTEV,
             "qty_packed": row.DOC_QTAP,
             "customer_line_ref": s(row.RIF_CLIENTE),
+            "unit_price": row.DOC_PZ_NETTO,
         }
 
     def preprocess_rows(self, raw_rows: list) -> list[dict]:

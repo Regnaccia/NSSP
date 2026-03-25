@@ -27,6 +27,7 @@ class OrderLineBuilder(BaseBuilder):
                 qty_shipped=row.qty_shipped,
                 qty_packed=row.qty_packed,
                 customer_line_ref=self._strip(row.customer_line_ref),
+                unit_price=row.unit_price,
                 built_at=now,
                 sync_run_id=row.sync_run_id,
             ))

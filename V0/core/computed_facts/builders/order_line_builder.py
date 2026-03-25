@@ -18,9 +18,19 @@ class ComputedOrderLineBuilder(BaseBuilder):
         rows = session.execute(select(FactOrderLine)).scalars().all()
 
         for row in rows:
-            qty_ordered = row.qty_ordered or 0
-            qty_shipped = row.qty_shipped or 0
-            qty_remaining = qty_ordered - qty_shipped
+            if row.qty_ordered is not None:
+                qty_remaining = row.qty_ordered - (row.qty_shipped or 0)
+                is_fully_shipped = qty_remaining <= 0
+                is_open_line = qty_remaining > 0
+            else:
+                qty_remaining = None
+                is_fully_shipped = None
+                is_open_line = None
+
+            if qty_remaining is not None and row.unit_price is not None:
+                value_remaining = qty_remaining * row.unit_price
+            else:
+                value_remaining = None
 
             session.add(ComputedOrderLine(
                 order_source_id=row.order_source_id,
@@ -29,7 +39,10 @@ class ComputedOrderLineBuilder(BaseBuilder):
                 qty_ordered=row.qty_ordered,
                 qty_shipped=row.qty_shipped,
                 qty_remaining=qty_remaining,
-                is_fully_shipped=qty_remaining <= 0,
+                is_fully_shipped=is_fully_shipped,
+                is_open_line=is_open_line,
+                unit_price=row.unit_price,
+                value_remaining=value_remaining,
                 built_at=now,
             ))
             result.records_built += 1

@@ -8,6 +8,7 @@ from db.session import Base
 import sync.models                  # noqa — registra tutti i modelli sync_* su Base.metadata
 import core.facts.models            # noqa — registra tutti i modelli fact_* su Base.metadata
 import core.computed_facts.models   # noqa — registra tutti i modelli computed_* su Base.metadata
+import core.models                  # noqa — registra core_run su Base.metadata
 
 config = context.config
 

@@ -48,7 +48,7 @@ def run_full_sync():
 
         try:
             for extractor in EXTRACTORS:
-                print(f"  → {extractor.entity_type}...", end=" ", flush=True)
+                print(f"  -> {extractor.entity_type}...", end=" ", flush=True)
                 result = extractor.run(session, easy_engine, sync_run.id)
                 print(result)
 

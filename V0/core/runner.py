@@ -1,10 +1,12 @@
 """
-Entry point del layer core — full rebuild dei Source Facts e Computed Facts.
+Entry point del layer core.
 
 Utilizzo:
-    python -m core.runner
+    python -m core.runner           # full rebuild
+    python -m core.runner targeted  # targeted rebuild dal change_set
 """
 
+import sys
 from datetime import datetime, timezone
 
 from db.session import get_session
@@ -21,7 +23,10 @@ from core.computed_facts.builders import (
     ComputedOrderLineBuilder,
     ComputedStockBalanceBuilder,
     ComputedProductionStatusBuilder,
+    ComputedArticleDemandBuilder,
 )
+from core.orchestrators.targeted_rebuild import run_targeted_rebuild, _get_latest_sync_run_id
+from core.models.core_run import CoreRun
 
 # Ordine rispetta le dipendenze di chiave:
 # Destination dipende da Customer → CustomerBuilder prima di DestinationBuilder
@@ -40,6 +45,7 @@ COMPUTED_BUILDERS = [
     ComputedOrderLineBuilder(),
     ComputedStockBalanceBuilder(),
     ComputedProductionStatusBuilder(),
+    ComputedArticleDemandBuilder(),
 ]
 
 
@@ -85,18 +91,46 @@ def run_full_rebuild():
         if errors:
             has_errors = True
 
-    finished_at = datetime.now(timezone.utc)
+        # Logga il full rebuild in core_run — fissa il baseline per i targeted rebuild
+        sync_run_id_to = _get_latest_sync_run_id(session)
+        finished_at = datetime.now(timezone.utc)
+        status = "COMPLETED_WITH_WARNINGS" if has_errors else "COMPLETED"
+        session.add(CoreRun(
+            started_at=started_at,
+            finished_at=finished_at,
+            status=status,
+            rebuild_type="FULL",
+            sync_run_id_to=sync_run_id_to,
+            records_rebuilt=total_built,
+        ))
+
     return total_built, has_errors, started_at, finished_at
 
 
 if __name__ == "__main__":
-    print("=" * 50)
-    print("MRS Core — full rebuild")
-    print("=" * 50)
-    total, errors, started, finished = run_full_rebuild()
-    duration = (finished - started).total_seconds()
-    print("=" * 50)
-    status = "COMPLETED_WITH_WARNINGS" if errors else "COMPLETED"
-    print(f"Stato:     {status}")
-    print(f"Durata:    {duration:.1f}s")
-    print(f"Costruiti: {total}")
+    mode = sys.argv[1] if len(sys.argv) > 1 else "full"
+
+    if mode == "targeted":
+        print("=" * 50)
+        print("MRS Core — targeted rebuild")
+        print("=" * 50)
+        started = datetime.now(timezone.utc)
+        result = run_targeted_rebuild()
+        finished = datetime.now(timezone.utc)
+        duration = (finished - started).total_seconds()
+        print("=" * 50)
+        print(f"Stato:      {result['status']}")
+        print(f"Durata:     {duration:.1f}s")
+        print(f"Aggregates: {result['aggregates_rebuilt']}")
+        print(f"Records:    {result['records_rebuilt']}")
+    else:
+        print("=" * 50)
+        print("MRS Core — full rebuild")
+        print("=" * 50)
+        total, errors, started, finished = run_full_rebuild()
+        duration = (finished - started).total_seconds()
+        print("=" * 50)
+        status = "COMPLETED_WITH_WARNINGS" if errors else "COMPLETED"
+        print(f"Stato:     {status}")
+        print(f"Durata:    {duration:.1f}s")
+        print(f"Costruiti: {total}")

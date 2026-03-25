@@ -1,7 +1,7 @@
 # SPEC V0.3 — COMPUTED FACTS MECCANICI
 
 **Data apertura:** 2026-03-25
-**Stato:** IN PROGRESS
+**Stato:** COMPLETED ✅
 
 ---
 
@@ -18,13 +18,40 @@ Un Computed Fact è puro algebra sui Source Facts: somme, sottrazioni, aggregazi
 
 ## Scope v0.3
 
-### 3 Computed Facts prioritari
+### Computed Facts implementati — copertura completa DL
 
-| Computed Fact         | Entità base               | Calcolo |
-|-----------------------|---------------------------|---------|
-| `qty_remaining`       | `fact_order_lines`        | `qty_ordered - qty_shipped` per riga ordine |
-| `stock_balance`       | `fact_stock_movements`    | `SUM(qty_in) - SUM(qty_out)` per articolo + deposito |
-| `qty_in_production`   | `fact_productions`        | `SUM(qty_to_produce - qty_produced)` per articolo, su ordini aperti (`is_closed=False`) |
+**`computed_order_lines`** (per riga ordine):
+
+| Campo | Calcolo |
+|---|---|
+| `qty_remaining` | `qty_ordered - qty_shipped` |
+| `is_fully_shipped` | `qty_remaining <= 0` |
+| `is_open_line` | `qty_remaining > 0` |
+| `unit_price` | da `fact_order_lines` (campo Easy: `DOC_PZ_NETTO`) |
+| `value_remaining` | `qty_remaining × unit_price` |
+
+**`computed_stock_balances`** (per articolo + deposito):
+
+| Campo | Calcolo |
+|---|---|
+| `stock_balance` | `SUM(qty_in) - SUM(qty_out)` |
+| `qty_in_total` / `qty_out_total` | componenti separati |
+| `movement_count` | numero movimenti aggregati |
+
+**`computed_production_status`** (per articolo, ordini aperti):
+
+| Campo | Calcolo |
+|---|---|
+| `qty_in_production` | `SUM(qty_to_produce - qty_produced)` su `is_closed=False` |
+| `open_order_count` | numero ordini aperti |
+
+**`computed_article_demand`** (per articolo, visione integrata):
+
+| Campo | Calcolo |
+|---|---|
+| `total_stock` | `SUM(qty_in - qty_out)` su tutti i depositi |
+| `total_open_demand` | `SUM(qty_ordered - qty_shipped)` su righe aperte |
+| `net_available_raw` | `total_stock - total_open_demand` |
 
 ---
 
@@ -36,16 +63,18 @@ core/
     __init__.py
     models/
       __init__.py
-      computed_order_line.py        # ComputedOrderLine
-      computed_stock_balance.py     # ComputedStockBalance
-      computed_production_status.py # ComputedProductionStatus
+      mixins.py                      # ComputedMetaMixin (built_at, no sync_run_id)
+      computed_order_line.py         # ComputedOrderLine
+      computed_stock_balance.py      # ComputedStockBalance
+      computed_production_status.py  # ComputedProductionStatus
+      computed_article_demand.py     # ComputedArticleDemand
     builders/
       __init__.py
-      base.py                       # BaseComputedBuilder (eredita da BaseBuilder)
       order_line_builder.py
       stock_balance_builder.py
       production_status_builder.py
-  runner.py                         # aggiornato per includere computed facts
+      article_demand_builder.py
+  runner.py                          # Fase 1 (source) + flush + Fase 2 (computed)
 ```
 
 I nomi delle tabelle DB saranno `computed_order_lines`, `computed_stock_balances`, `computed_production_status`.
