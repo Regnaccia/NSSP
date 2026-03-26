@@ -1,0 +1,44 @@
+Flusso ordine e processo aziendale
+
+	Ricezione richiesta da cliente ( Uff. commerciale)
+	L’ufficio commerciale riceve una richiesta da parte di un cliente 
+	Se articoli standard a catalogo vengono dati al cliente i prezzi basandosi su listino e condizione di vendita standard
+	Se articoli speciali viene analizzata la fattibilità e calcolati i prezzi di realizzazione
+	Le richieste possono pervenire via mail o telefonicamente
+	Attualmente ogni operatore gestisce le sue richieste in maniera autonoma e senza interscambio basandosi su dati storici ed esperienza
+	Una volta elaborati i prezzi l’offerta viene caricata nel gestionale attuale ed inviata al cliente, il gestionale le tiene nello storico
+
+	Ricezione ordine (Uff Commerciale)
+	Se il cliente accetta il preventivo inviato invia conferma d’ordine
+	L’ordine viene registrato nel sistema interno 
+	Viene generato un foglio ordine che chiamiamo Fabisogno per le operazioni successive che viene depositato in un contenitore fisico
+
+	Analisi Preliminare Fabissogno (Ufficio Produzione)
+	I fabisogni vengono recuperati dal contenitore fisico (solitamente ogni mattina)
+	Vengono analizzate le contenute negli ordini 
+	Se articoli standard si controlla la giacenza in magazzino e se la disponibiltà non è sufficiente e l’articolo non è già in produzione si genera la commessa di produzione
+	Se articoli speciali si valutano le soluzioni tecniche necessarie, materiali e utensili dedicati, si genera commessa di produzione 
+	Le commesse di produzione si portano nel reparto produzione e i fabisogni si passano al magazzino
+
+	Produzione (reparto produzione)
+	Vengono prodotti gli articoli necessari
+	Seguirà un analisi dedicata al reparto produttivo
+
+	Approntamento ordini (Magazzino)
+	Im magazzino ricevuto il fabisogno si occupa di approntare gli ordini cliente e spedire la merce 
+	Esistono logiche di approntamento e spedizione 
+•	Alcuni clienti che mandano costantemente ordini vengono gestiti con data di consegna fissa esempi cliente A spedire sempre tutto il materiale disponibile il lunedì,  cliente B il martedì e così via
+•	Altri clienti vengono gestiti secondo data di spedizione indicata sull’ordine
+•	Per altri si esegue la spedizione al raggiungimento di soglie di valore o indicazioni specifiche
+•	Può capitare che il reparto logistica segnali urgenze, si procede quindi a spedizioni parziali o fuori programma per soddisfare condizioni particolari
+	Una volta approntata la merce il fabisogno con indicazioni di cosa è stato approntato colli e peso viene portato all’ufficio logistica
+
+	Gestione logistica (Uff. Logistica)
+	Riceve il fabisogno con le indicazioni necessarie dal magazzino
+	Decide il corriere da utilizzare in base a indicazioni specifiche del cliente o se il cliente non ha preferenze stabilisce quale corriere utilizzare in base a prezzo e urgenza 
+	Avvisa il cliente della merce pronta 
+	Se il cliente conferma la spedizione e metodo di spedizione
+	Prepara documenti di trasporto
+	Prenota il ritiro sul portale del corriere (bartolini gls ecc)
+
+	Il coriere ritira il pacco e abbiamo finito

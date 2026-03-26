@@ -8,7 +8,8 @@ Flusso:
   4. Ricostruisce in ordine: OrderAggregate → ArticleSupplyDemandAggregate
   5. Applica FifoAllocationPolicy per tutti gli articoli impattati
      (inclusi quelli derivati dagli ordini ricostruiti)
-  6. Logga il risultato in core_run
+  6. Calcola gli stati canonici (OrderStateBuilder) per tutti gli ordini impattati
+  7. Logga il risultato in core_run
 """
 
 from datetime import datetime, timezone
@@ -21,6 +22,7 @@ from core.aggregates.article_supply_demand_aggregate import ArticleSupplyDemandA
 from core.orchestrators.dependency_registry import DependencyRegistry
 from core.policies.fifo_allocation import FifoAllocationPolicy
 from core.computed_facts.models.computed_order_line import ComputedOrderLine
+from core.states.builders.order_state_builder import OrderStateBuilder
 from sync.models.sync_change_item import SyncChangeItem
 
 
@@ -162,18 +164,38 @@ def run_targeted_rebuild() -> dict:
                     print(f"ERROR: {e}")
                     raise
 
+            # Calcola stati canonici per tutti gli ordini impattati
+            state_builder = OrderStateBuilder()
+            total_states_built = 0
+            print("--- States ---")
+            for order_id in sorted(order_ids):
+                print(f"  -> order_state_builder({order_id})...", end=" ", flush=True)
+                try:
+                    state_result = state_builder.build(session, int(order_id))
+                    print(state_result)
+                    total_states_built += state_result.line_states_built + 1  # +1 per order_state
+                    if state_result.errors:
+                        has_errors = True
+                        for err in state_result.errors:
+                            print(f"    WARN: {err}")
+                except Exception as e:
+                    has_errors = True
+                    print(f"ERROR: {e}")
+                    raise
+
             core_run.finished_at = datetime.now(timezone.utc)
             core_run.status = "COMPLETED_WITH_WARNINGS" if has_errors else "COMPLETED"
             core_run.sync_run_id_from = sync_run_id_from
             core_run.sync_run_id_to = sync_run_id_to
             core_run.aggregates_rebuilt = total_aggregates
-            core_run.records_rebuilt = total_records + total_policy_updated
+            core_run.records_rebuilt = total_records + total_policy_updated + total_states_built
 
             return {
                 "status": core_run.status,
                 "aggregates_rebuilt": total_aggregates,
                 "records_rebuilt": total_records,
                 "policy_updated": total_policy_updated,
+                "states_built": total_states_built,
                 "sync_run_id_from": sync_run_id_from,
                 "sync_run_id_to": sync_run_id_to,
             }

@@ -26,3 +26,6 @@ internal_docs/
 
 # Easy schema inspection output
 V0/debug/easy_schema/
+
+*.zip
+

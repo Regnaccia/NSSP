@@ -1,7 +1,7 @@
 # SPEC V0.5 — POLICY-DRIVEN COMPUTED FACTS
 
 **Data apertura:** 2026-03-25
-**Stato:** IN PROGRESS
+**Stato:** COMPLETED ✅
 
 ---
 

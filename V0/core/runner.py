@@ -29,6 +29,8 @@ from core.orchestrators.targeted_rebuild import run_targeted_rebuild, get_latest
 from core.models.core_run import CoreRun
 from core.policies.fifo_allocation import FifoAllocationPolicy
 from core.computed_facts.models.computed_article_demand import ComputedArticleDemand
+from core.states.builders.order_state_builder import OrderStateBuilder
+from core.facts.models.fact_order import FactOrder
 from sqlalchemy import select
 
 # Ordine rispetta le dipendenze di chiave:
@@ -109,6 +111,27 @@ def run_full_rebuild():
                 if policy_result.errors:
                     has_errors = True
                     for err in policy_result.errors:
+                        print(f"    WARN: {err}")
+            except Exception as e:
+                has_errors = True
+                print(f"ERROR: {e}")
+                raise
+
+        session.flush()  # rende visibili i campi policy agli state builder
+        print("--- Fase 4: States ---")
+        state_builder = OrderStateBuilder()
+        order_ids = session.execute(
+            select(FactOrder.source_id)
+        ).scalars().all()
+        for order_id in order_ids:
+            print(f"  -> order_state_builder({order_id})...", end=" ", flush=True)
+            try:
+                state_result = state_builder.build(session, order_id)
+                print(state_result)
+                total_built += state_result.line_states_built + 1
+                if state_result.errors:
+                    has_errors = True
+                    for err in state_result.errors:
                         print(f"    WARN: {err}")
             except Exception as e:
                 has_errors = True
