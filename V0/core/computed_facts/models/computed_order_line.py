@@ -30,3 +30,5 @@ class ComputedOrderLine(Base, ComputedMetaMixin):
     is_open_line: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     unit_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(13, 4), nullable=True)
     value_remaining: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 4), nullable=True)
+    qty_coverable_now: Mapped[Optional[Decimal]] = mapped_column(Numeric(13, 5), nullable=True)
+    coverable_now: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)

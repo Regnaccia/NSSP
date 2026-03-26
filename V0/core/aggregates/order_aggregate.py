@@ -1,4 +1,4 @@
-from sqlalchemy import select, delete, func
+from sqlalchemy import select, delete
 from core.aggregates.base import BaseAggregate, RebuildResult
 from core.facts.models.fact_order import FactOrder
 from core.facts.models.fact_order_line import FactOrderLine

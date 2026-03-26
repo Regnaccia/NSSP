@@ -25,8 +25,11 @@ from core.computed_facts.builders import (
     ComputedProductionStatusBuilder,
     ComputedArticleDemandBuilder,
 )
-from core.orchestrators.targeted_rebuild import run_targeted_rebuild, _get_latest_sync_run_id
+from core.orchestrators.targeted_rebuild import run_targeted_rebuild, get_latest_sync_run_id
 from core.models.core_run import CoreRun
+from core.policies.fifo_allocation import FifoAllocationPolicy
+from core.computed_facts.models.computed_article_demand import ComputedArticleDemand
+from sqlalchemy import select
 
 # Ordine rispetta le dipendenze di chiave:
 # Destination dipende da Customer → CustomerBuilder prima di DestinationBuilder
@@ -91,8 +94,29 @@ def run_full_rebuild():
         if errors:
             has_errors = True
 
+        session.flush()  # rende visibili i Computed Facts alla policy
+        print("--- Fase 3: Policy ---")
+        policy = FifoAllocationPolicy()
+        article_ids = session.execute(
+            select(ComputedArticleDemand.article_source_id)
+        ).scalars().all()
+        for article_id in article_ids:
+            print(f"  -> fifo_allocation({article_id})...", end=" ", flush=True)
+            try:
+                policy_result = policy.apply(session, article_id)
+                print(policy_result)
+                total_built += policy_result.records_updated
+                if policy_result.errors:
+                    has_errors = True
+                    for err in policy_result.errors:
+                        print(f"    WARN: {err}")
+            except Exception as e:
+                has_errors = True
+                print(f"ERROR: {e}")
+                raise
+
         # Logga il full rebuild in core_run — fissa il baseline per i targeted rebuild
-        sync_run_id_to = _get_latest_sync_run_id(session)
+        sync_run_id_to = get_latest_sync_run_id(session)
         finished_at = datetime.now(timezone.utc)
         status = "COMPLETED_WITH_WARNINGS" if has_errors else "COMPLETED"
         session.add(CoreRun(
