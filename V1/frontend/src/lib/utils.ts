@@ -49,13 +49,24 @@ export function extractApiError(err: unknown): string {
   return 'Errore imprevisto — riprovare'
 }
 
-// ─── Download Excel ────────────────────────────────────────────────────────────
+// ─── Download CSV ─────────────────────────────────────────────────────────────
 
 export function downloadExcel(base64: string, filename: string) {
   const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0))
   const blob = new Blob([bytes], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+export function downloadCsv(base64: string, filename: string) {
+  const text = atob(base64)
+  const blob = new Blob([text], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url

@@ -69,7 +69,7 @@ class GeneraCommesseRequest(BaseModel):
 
 class GeneraCommesseResponse(BaseModel):
     commesse_create: int
-    file_csv_base64: str              # CSV semicolon-delimited encodato base64 per download frontend
+    file_excel_base64: str            # file Excel encodato base64 per download frontend
 
 
 # ---------------------------------------------------------------------------

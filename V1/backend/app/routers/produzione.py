@@ -13,7 +13,6 @@ POST /commesse/{id}/assegna — assegna macchina a commessa
 GET  /macchine              — lista macchine attive
 """
 import base64
-import csv
 import io
 import uuid
 from datetime import datetime, timezone, date
@@ -111,7 +110,7 @@ def genera_commesse(body: GeneraCommesseRequest, session: Session = Depends(get_
                            a.lunghezza_barra, a.misura, a.immagine,
                            mp.codice AS materia_prima_codice,
                            COALESCE(a.lunghezza_barra, mp.lunghezza_mm) AS lunghezza_effettiva,
-                           o.numero_ordine, o.data_consegna,
+                           o.numero_ordine, ro.riga_ej_id, o.data_consegna,
                            c.ragione_sociale, c.nickname
                     FROM righe_ordine ro
                     JOIN articoli a     ON a.id = ro.articolo_id
@@ -139,7 +138,7 @@ def genera_commesse(body: GeneraCommesseRequest, session: Session = Depends(get_
             qty_cliente = riga_input.qty_ciclo_corrente or qty_da_produrre
             qty_scorta  = max(0, riga_input.qty_scorta)
             articolo_id = row["articolo_id"]
-            numero_ordine = row["numero_ordine"]
+            numero_ordine = f"{row['numero_ordine']}/{row['riga_ej_id']}" if row["riga_ej_id"] else row["numero_ordine"]
             data_consegna = row["data_consegna"]
             cliente_label = row["nickname"] or row["ragione_sociale"]
 
@@ -232,7 +231,7 @@ def genera_commesse(body: GeneraCommesseRequest, session: Session = Depends(get_
         righe_excel.append({
             "cliente":      cliente_excel,
             "codice":       row["codice_articolo"],
-            "descrizione":  row["descrizione"] or "",
+            "descrizione":  str([row["descrizione"]]) if row["descrizione"] else "[]",
             "immagine":     row.get("immagine") or "",
             "misura":       row.get("misura") or "",
             "quantita":     qty_totale,
@@ -245,29 +244,39 @@ def genera_commesse(body: GeneraCommesseRequest, session: Session = Depends(get_
 
     session.commit()
 
-    # ── Genera CSV ──────────────────────────────────────────────────────────
-    buf = io.StringIO()
-    writer = csv.writer(buf, delimiter=";", quoting=csv.QUOTE_MINIMAL)
+    # ── Genera Excel ────────────────────────────────────────────────────────
+    try:
+        import openpyxl
+    except ImportError:
+        raise HTTPException(
+            status_code=500,
+            detail="openpyxl non installato — eseguire: pip install openpyxl"
+        )
 
-    writer.writerow([
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Commesse MRS"
+
+    ws.append([
         "cliente", "codice", "descrizione", "immagine",
         "misura", "quantità", "materiale", "mm_materiale",
         "ordine", "note", "user"
     ])
 
     for r in righe_excel:
-        des_list = str([r["descrizione"]]) if r["descrizione"] else "[]"
-        writer.writerow([
-            r["cliente"], r["codice"], des_list, r["immagine"],
+        ws.append([
+            r["cliente"], r["codice"], r["descrizione"], r["immagine"],
             r["misura"], r["quantita"], r["materiale"], r["mm_materiale"],
             r["ordine"], r["note"], r["user"],
         ])
 
-    csv_b64 = base64.b64encode(buf.getvalue().encode("utf-8")).decode()
+    buf = io.BytesIO()
+    wb.save(buf)
+    excel_b64 = base64.b64encode(buf.getvalue()).decode()
 
     return GeneraCommesseResponse(
         commesse_create=commesse_create,
-        file_csv_base64=csv_b64,
+        file_excel_base64=excel_b64,
     )
 
 
