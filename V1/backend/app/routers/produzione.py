@@ -211,35 +211,53 @@ def genera_commesse(body: GeneraCommesseRequest, session: Session = Depends(get_
 
 @router.get("/f1b", response_model=list[ArticoloF1bResponse])
 def get_f1b(
-    categoria: Optional[str] = Query(None),
-    tipo_produzione: Optional[str] = Query(None),
+    famiglia: Optional[str] = Query(None),  # standard | speciali | barre
     session: Session = Depends(get_db),
 ):
-    """Lista articoli sotto scorta target (storico_sufficiente=True, qty_disponibile_futura < target)."""
+    """
+    Lista articoli sotto scorta target.
+    Famiglia: standard (prodotti finiti), speciali (cod S*), barre (cat M/L).
+    Formula da_produrre = min(gap_scorta, cap_residua) — capienza come limite fisico.
+    """
     sql = text("""
-        SELECT id, codice, descrizione, tipo_produzione,
-               scorta_mensile, mesi_scorta, storico_sufficiente, scorta_calcolata_at
+        SELECT id, codice, codice_upper, descrizione, tipo_produzione, categoria,
+               scorta_mensile, mesi_scorta, storico_sufficiente, scorta_calcolata_at,
+               capienza, giacenza_attuale
         FROM articoli
         WHERE storico_sufficiente = true
-          AND tipo_produzione IN ('PEZZO', 'BARRA', 'FASCI')
-          AND (:categoria IS NULL       OR categoria = :categoria)
-          AND (:tipo_produzione IS NULL OR tipo_produzione = :tipo_produzione)
+          AND (
+              :famiglia IS NULL
+              OR (:famiglia = 'barre'    AND categoria IN ('M','L'))
+              OR (:famiglia = 'speciali' AND (categoria = 'S' OR codice_upper LIKE 'S%'))
+              OR (:famiglia = 'standard' AND categoria NOT IN ('M','L','S','0','Z','MC','U')
+                                        AND codice_upper NOT LIKE 'S%'
+                                        AND codice_upper NOT LIKE 'BCL%'
+                                        AND codice_upper NOT LIKE 'CERT%'
+                                        AND codice_upper NOT IN ('XS','CONF','0'))
+          )
         ORDER BY codice
     """)
 
-    articoli = session.execute(sql, {
-        "categoria": categoria,
-        "tipo_produzione": tipo_produzione,
-    }).mappings().all()
+    articoli_rows = session.execute(sql, {"famiglia": famiglia}).mappings().all()
 
     result = []
-    for art in articoli:
+    for art in articoli_rows:
         target_scorta = art["scorta_mensile"] * art["mesi_scorta"]
         qty_disp_futura = get_qty_disponibile_futura(session, art["id"])
-        qty_da_produrre_scorta = max(0, target_scorta - qty_disp_futura)
+        gap_scorta = max(0, target_scorta - qty_disp_futura)
+
+        if gap_scorta <= 0:
+            continue
+
+        # Capienza fisica: se impostata, limita la produzione allo spazio disponibile in magazzino
+        if art["capienza"] and art["capienza"] > 0:
+            cap_residua = max(0, art["capienza"] - max(0, qty_disp_futura))
+            qty_da_produrre_scorta = min(gap_scorta, cap_residua)
+        else:
+            qty_da_produrre_scorta = gap_scorta
 
         if qty_da_produrre_scorta <= 0:
-            continue  # scorta sufficiente — non mostrare
+            continue
 
         result.append(ArticoloF1bResponse(
             articolo_id=art["id"],

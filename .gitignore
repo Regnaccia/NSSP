@@ -21,6 +21,10 @@ Thumbs.db
 # IDE
 .vscode/
 
+# Node / frontend
+node_modules/
+V1/frontend/node_modules/
+
 # PRIVATE Docs
 internal_docs/
 

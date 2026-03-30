@@ -55,8 +55,9 @@ def get_righe_da_processare(
             o.numero_ordine,
             o.data_consegna,
             o.cliente_id,
-            a.codice           AS codice_articolo,
-            a.descrizione      AS descrizione_articolo,
+            a.codice              AS codice_articolo,
+            a.descrizione         AS descrizione_articolo,
+            a.giacenza_attuale    AS giacenza_attuale,
             c.ragione_sociale,
             c.nickname
         FROM righe_ordine ro
@@ -64,11 +65,14 @@ def get_righe_da_processare(
         JOIN articoli a    ON a.id = ro.articolo_id
         JOIN clienti c     ON c.id = o.cliente_id
         WHERE ro.stato NOT IN ('spedito', 'chiuso')
+          AND ro.qty_consegnata < ro.qty_ordinata
           AND (ro.qty_ordinata - ro.qty_disponibile - ro.qty_in_produzione) > 0
-          AND NOT EXISTS (
-              SELECT 1 FROM commesse cm
-              WHERE cm.riga_ordine_id = ro.id
-                AND cm.stato != 'completata'
+          AND a.giacenza_attuale < (
+              SELECT COALESCE(SUM(ro2.qty_ordinata - ro2.qty_consegnata), 0)
+              FROM righe_ordine ro2
+              WHERE ro2.articolo_id = ro.articolo_id
+                AND ro2.stato NOT IN ('spedito', 'chiuso')
+                AND ro2.qty_consegnata < ro2.qty_ordinata
           )
           AND (:cliente_id IS NULL OR o.cliente_id = :cliente_id)
           AND (:data_da IS NULL    OR o.data_consegna >= :data_da)
@@ -123,6 +127,7 @@ def get_righe_da_processare(
             "qty_ordinata": r["qty_ordinata"],
             "qty_disponibile": r["qty_disponibile"],
             "qty_in_produzione": r["qty_in_produzione"],
+            "giacenza_attuale": r["giacenza_attuale"] or 0,
             "qty_da_produrre": qty_da_produrre,
         })
 
@@ -135,34 +140,19 @@ def get_righe_da_processare(
 
 def get_qty_disponibile_futura(session: Session, articolo_id: str) -> int:
     """
-    giacenza_attuale - impegni_ordini_aperti_futuri
+    giacenza_attuale - impegni_ordini_aperti
 
-    giacenza_attuale: approssimata come SUM(qty_disponibile) delle righe aperte
-    di quell'articolo (già calcolata dal sync da MAG_REALE).
+    giacenza_attuale: letta da articoli.giacenza_attuale (syncata da MAG_REALE
+    tramite sync_giacenze handler).
 
     impegni_aperti: SUM(qty_ordinata - qty_consegnata) righe aperte di quell'articolo.
-
-    Nota: in Fase 0 qty_disponibile viene dalla sync EasyJob (DOC_QTAP),
-    che rappresenta già la giacenza appartata per quel cliente. La giacenza
-    "pura" per scorte si calcola come differenza rispetto agli impegni totali.
     """
-    # Giacenza corrente aggregata per articolo (dal sync EasyJob via MAG_REALE)
-    # Usiamo il MAX di qty_disponibile tra tutte le righe dello stesso articolo
-    # come proxy della giacenza (è lo stesso valore su tutte le righe aperte).
-    # In Fase 3+ sostituire con lettura diretta da MAG_REALE.
     giacenza_row = session.execute(
-        text("""
-            SELECT COALESCE(MAX(ro.qty_disponibile), 0) AS giacenza
-            FROM righe_ordine ro
-            JOIN ordini o ON o.id = ro.ordine_id
-            WHERE ro.articolo_id = :aid
-              AND ro.stato NOT IN ('spedito', 'chiuso')
-        """),
+        text("SELECT COALESCE(giacenza_attuale, 0) FROM articoli WHERE id = :aid"),
         {"aid": articolo_id},
     ).fetchone()
     giacenza = int(giacenza_row[0]) if giacenza_row else 0
 
-    # Impegni ordini aperti: quanto è già "promesso" agli ordini
     impegni_row = session.execute(
         text("""
             SELECT COALESCE(SUM(ro.qty_ordinata - ro.qty_consegnata), 0) AS impegni

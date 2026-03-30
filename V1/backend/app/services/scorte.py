@@ -95,11 +95,11 @@ def _fetch_movimenti_vendite() -> dict[str, list[dict]]:
             ART_COD,
             YEAR(DOC_DATA)  AS anno,
             MONTH(DOC_DATA) AS mese,
-            SUM(PEZZI_SCA)  AS qty
+            SUM(QTA_SCA)    AS qty
         FROM MAG_REALE
         WHERE CAUM_COD = 'VEN'
           AND DOC_DATA >= DATEADD(month, -12, GETDATE())
-          AND PEZZI_SCA > 0
+          AND QTA_SCA > 0
         GROUP BY ART_COD, YEAR(DOC_DATA), MONTH(DOC_DATA)
     """)
 
@@ -126,7 +126,10 @@ def ricalcola_scorte_tutti(session: Session, articolo_id: str | None = None) -> 
         movimenti_per_articolo = _fetch_movimenti_vendite()
     except Exception as exc:
         logger.error("Impossibile leggere MAG_REALE per ricalcolo scorte: %s", exc)
-        return 0
+        raise RuntimeError(
+            f"EasyJob non raggiungibile — impossibile leggere storico vendite da MAG_REALE. "
+            f"Verificare la connessione e riprovare. Dettaglio: {exc}"
+        ) from exc
 
     # Articoli da aggiornare
     if articolo_id:

@@ -28,9 +28,18 @@ EASYJOB_USER = os.getenv("EASYJOB_USER")
 EASYJOB_PASSWORD = os.getenv("EASYJOB_PASSWORD")
 EASYJOB_DRIVER = os.getenv("EASYJOB_DRIVER", "ODBC Driver 18 for SQL Server")
 
+# Per istanze named (es. SERVER\SQLEXPRESS) non aggiungere la porta:
+# il SQL Server Browser Service risolve il numero di porta automaticamente.
+# La porta esplicita si usa solo con istanze default (solo IP/hostname).
+_server_str = (
+    EASYJOB_SERVER
+    if (EASYJOB_SERVER and "\\" in EASYJOB_SERVER)
+    else f"{EASYJOB_SERVER},{EASYJOB_PORT}"
+)
+
 _easy_odbc = (
     f"DRIVER={{{EASYJOB_DRIVER}}};"
-    f"SERVER={EASYJOB_SERVER},{EASYJOB_PORT};"
+    f"SERVER={_server_str};"
     f"DATABASE={EASYJOB_DATABASE};"
     f"UID={EASYJOB_USER};"
     f"PWD={EASYJOB_PASSWORD};"

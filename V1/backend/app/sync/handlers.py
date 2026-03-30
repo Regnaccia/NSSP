@@ -213,7 +213,6 @@ def _build_qty_in_produzione_map() -> dict[str, int]:
             SELECT ART_COD, SUM(DOC_QTOR - DOC_QTEV) AS qty_ip
             FROM DPRE_PROD
             WHERE DOC_QTOR > DOC_QTEV
-              AND (DOC_EVAS IS NULL OR DOC_EVAS = 0)
             GROUP BY ART_COD
         """)
         return {
@@ -359,9 +358,10 @@ def sync_ordini_e_righe(session: Session) -> int:
                     continue
 
                 qty_ord = int(line.get("DOC_QTOR") or 0)
-                qty_disp = int(line.get("DOC_QTAP") or 0)  # appartato da EasyJob
+                qty_disp = int(line.get("DOC_QTAP") or 0)  # appartato da EasyJob (0 se non usato)
                 qty_cons = int(line.get("DOC_QTEV") or 0)
                 qty_ip = qty_ip_map.get(art_cod.upper(), 0)
+                stato_riga = "spedito" if qty_cons >= qty_ord and qty_ord > 0 else "aperto"
 
                 existing_riga = session.execute(
                     text("""
@@ -380,6 +380,7 @@ def sync_ordini_e_righe(session: Session) -> int:
                                 qty_disponibile   = :qd,
                                 qty_in_produzione = :qi,
                                 qty_consegnata    = :qc,
+                                stato             = :stato,
                                 synced_at         = :ts
                             WHERE id = :rid
                         """),
@@ -389,6 +390,7 @@ def sync_ordini_e_righe(session: Session) -> int:
                             "qd": qty_disp,
                             "qi": qty_ip,
                             "qc": qty_cons,
+                            "stato": stato_riga,
                             "ts": datetime.now(timezone.utc),
                             "rid": existing_riga[0],
                         },
@@ -399,10 +401,10 @@ def sync_ordini_e_righe(session: Session) -> int:
                             INSERT INTO righe_ordine
                                 (id, ordine_id, articolo_id, riga_ej_id,
                                  qty_ordinata, qty_disponibile, qty_in_produzione,
-                                 qty_consegnata, synced_at)
+                                 qty_consegnata, stato, synced_at)
                             VALUES
                                 (:id, :oid, :aid, :rjid,
-                                 :qo, :qd, :qi, :qc, :ts)
+                                 :qo, :qd, :qi, :qc, :stato, :ts)
                         """),
                         {
                             "id": str(uuid.uuid4()),
@@ -413,6 +415,7 @@ def sync_ordini_e_righe(session: Session) -> int:
                             "qd": qty_disp,
                             "qi": qty_ip,
                             "qc": qty_cons,
+                            "stato": stato_riga,
                             "ts": datetime.now(timezone.utc),
                         },
                     )
@@ -434,6 +437,70 @@ def sync_ordini_e_righe(session: Session) -> int:
 
 
 # ---------------------------------------------------------------------------
+# sync_giacenze — MAG_REALE → articoli.giacenza_attuale
+# ---------------------------------------------------------------------------
+
+def sync_giacenze(session: Session) -> int:
+    """
+    Legge giacenza attuale da MAG_REALE (SUM(QTA_CAR - QTA_SCA) per articolo)
+    e aggiorna articoli.giacenza_attuale.
+    Ritorna numero articoli aggiornati.
+    """
+    t0 = time.monotonic()
+    try:
+        rows = fetch_easyjob("""
+            SELECT ART_COD, SUM(QTA_CAR - QTA_SCA) AS giacenza
+            FROM MAG_REALE
+            GROUP BY ART_COD
+            HAVING SUM(QTA_CAR - QTA_SCA) > 0
+        """)
+
+        count = 0
+        now = datetime.now(timezone.utc)
+
+        for row in rows:
+            art_cod = (_s(row["ART_COD"]) or "").upper()
+            if not art_cod:
+                continue
+            giacenza = int(row["giacenza"] or 0)
+
+            updated = session.execute(
+                text("""
+                    UPDATE articoli
+                    SET giacenza_attuale = :g, synced_at = :ts
+                    WHERE codice_upper = :c
+                """),
+                {"g": giacenza, "ts": now, "c": art_cod},
+            ).rowcount
+            if updated:
+                count += 1
+
+        # Azzera articoli non presenti in MAG_REALE (nessuna giacenza)
+        art_cods_with_stock = {(_s(r["ART_COD"]) or "").upper() for r in rows if r.get("ART_COD")}
+        if art_cods_with_stock:
+            session.execute(
+                text("""
+                    UPDATE articoli SET giacenza_attuale = 0
+                    WHERE codice_upper NOT IN :cods
+                      AND giacenza_attuale != 0
+                """),
+                {"cods": tuple(art_cods_with_stock)},
+            )
+
+        session.commit()
+        ms = int((time.monotonic() - t0) * 1000)
+        _update_sync_log(session, "giacenze", count, ms)
+        logger.info("sync_giacenze OK: %d articoli in %d ms", count, ms)
+        return count
+
+    except Exception as exc:
+        session.rollback()
+        _update_sync_log(session, "giacenze", error=str(exc))
+        logger.error("sync_giacenze ERRORE: %s", exc)
+        raise
+
+
+# ---------------------------------------------------------------------------
 # sync_all — esegue tutti i sync nell'ordine corretto
 # ---------------------------------------------------------------------------
 
@@ -442,6 +509,7 @@ HANDLER_MAP: dict[str, callable] = {
     "clienti": sync_clienti,
     "ordini": sync_ordini_e_righe,
     "righe_ordine": sync_ordini_e_righe,  # stesso handler, idempotente
+    "giacenze": sync_giacenze,
 }
 
 
@@ -456,11 +524,12 @@ def sync_tabella(session: Session, tabella: str) -> int:
 def sync_all(session: Session) -> dict[str, int]:
     """
     Esegue tutti i sync nell'ordine dipendenza-safe:
-    articoli → clienti → ordini+righe.
+    articoli → clienti → ordini+righe → giacenze.
     Ritorna dict {tabella: records_updated}.
     """
     results = {}
     results["articoli"] = sync_articoli(session)
     results["clienti"] = sync_clienti(session)
     results["ordini_e_righe"] = sync_ordini_e_righe(session)
+    results["giacenze"] = sync_giacenze(session)
     return results

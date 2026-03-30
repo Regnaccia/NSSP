@@ -24,22 +24,36 @@ router = APIRouter(
 
 @router.get("", response_model=list[ArticoloResponse])
 def list_articoli(
-    categoria: Optional[str] = Query(None),
+    q: Optional[str] = Query(None),                     # ricerca per codice
+    famiglia: Optional[str] = Query(None),              # standard | speciali | barre
     tipo_produzione: Optional[str] = Query(None),
     storico_sufficiente: Optional[bool] = Query(None),
     session: Session = Depends(get_db),
 ):
     sql = text("""
         SELECT * FROM articoli
-        WHERE (:categoria IS NULL          OR categoria = :categoria)
+        WHERE (:q IS NULL                  OR codice_upper LIKE :q_like)
           AND (:tipo_produzione IS NULL    OR tipo_produzione = :tipo_produzione)
           AND (:storico_suff IS NULL       OR storico_sufficiente = :storico_suff)
+          AND (
+              :famiglia IS NULL
+              OR (:famiglia = 'barre'    AND categoria IN ('M','L'))
+              OR (:famiglia = 'speciali' AND (categoria = 'S' OR codice_upper LIKE 'S%'))
+              OR (:famiglia = 'standard' AND categoria NOT IN ('M','L','S','0','Z','MC','U')
+                                        AND codice_upper NOT LIKE 'S%'
+                                        AND codice_upper NOT LIKE 'BCL%'
+                                        AND codice_upper NOT LIKE 'CERT%'
+                                        AND codice_upper NOT IN ('XS','CONF','0'))
+          )
         ORDER BY codice
+        LIMIT 200
     """)
     rows = session.execute(sql, {
-        "categoria": categoria,
+        "q": q,
+        "q_like": f"{(q or '').upper()}%",
         "tipo_produzione": tipo_produzione,
         "storico_suff": storico_sufficiente,
+        "famiglia": famiglia,
     }).mappings().all()
     return [ArticoloResponse(**dict(r)) for r in rows]
 

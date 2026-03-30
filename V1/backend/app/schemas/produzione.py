@@ -24,6 +24,7 @@ class RigaF1aResponse(BaseModel):
     qty_ordinata: int
     qty_disponibile: int
     qty_in_produzione: int
+    giacenza_attuale: int             # stock magazzino articolo (da MAG_REALE)
     qty_da_produrre: int              # calcolato live
 
     class Config:
@@ -107,6 +108,7 @@ class ArticoloResponse(BaseModel):
     storico_sufficiente: bool
     scorta_calcolata_at: Optional[datetime]
     capienza: Optional[int]
+    giacenza_attuale: int = 0
     lunghezza_barra: Optional[int]
     multipli_taglio: Optional[int]
     prd_pari: bool
