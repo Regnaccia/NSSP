@@ -9,10 +9,13 @@ import { KioskLayout } from '@/layouts/KioskLayout'
 import Login from '@/pages/Login'
 import AdminUtenti from '@/pages/Admin/Utenti'
 import AdminSync from '@/pages/Admin/Sync'
+import AdminCategorie from '@/pages/Admin/Categorie'
 import F1a from '@/pages/Produzione/F1a'
 import F1b from '@/pages/Produzione/F1b'
 import F2 from '@/pages/Produzione/F2'
 import ProdF4 from '@/pages/Produzione/F4'
+import Articoli from '@/pages/Produzione/Articoli'
+import MateriePrime from '@/pages/Produzione/MateriePrime'
 import F3a from '@/pages/Logistica/F3a'
 import F3b from '@/pages/Logistica/F3b'
 import F3c from '@/pages/Logistica/F3c'
@@ -80,6 +83,11 @@ export default function App() {
               <AdminSync />
             </RequireRole>
           } />
+          <Route path="/admin/categorie" element={
+            <RequireRole ruoli={['admin']}>
+              <AdminCategorie />
+            </RequireRole>
+          } />
 
           {/* Produzione */}
           <Route path="/produzione/f1a" element={
@@ -100,6 +108,16 @@ export default function App() {
           <Route path="/produzione/f4" element={
             <RequireRole ruoli={['produzione']}>
               <ProdF4 />
+            </RequireRole>
+          } />
+          <Route path="/produzione/articoli" element={
+            <RequireRole ruoli={['produzione']}>
+              <Articoli />
+            </RequireRole>
+          } />
+          <Route path="/produzione/materie-prime" element={
+            <RequireRole ruoli={['produzione']}>
+              <MateriePrime />
             </RequireRole>
           } />
 

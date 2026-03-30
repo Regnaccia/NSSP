@@ -38,8 +38,11 @@ export interface ArticoloResponse {
   scorta_mensile: number
   mesi_scorta: number
   tipo_produzione: TipoProduzione
+  materia_prima_id: string | null
   lunghezza_barra: number | null
   multipli_taglio: number | null
+  mm_materiale: number | null
+  giacenza_attuale: number
   prd_pari: boolean
   storico_sufficiente: boolean
   scorta_calcolata_at: string | null
@@ -135,15 +138,32 @@ export interface PolicyClienteResponse {
 
 // ─── Response types specifici per vista ──────────────────────────────────────
 
+export interface MateriaPrimaResponse {
+  id: string
+  codice: string
+  descrizione: string | null
+  lunghezza_mm: number | null
+  synced_at: string
+}
+
+export interface CategoriaArticoloResponse {
+  codice: string
+  descrizione: string | null
+  famiglia: 'standard' | 'speciali' | 'barre' | null
+  nr_articoli: number
+}
+
 export interface RigaF1aResponse {
   riga_ordine_id: string
   ordine_id: string
+  articolo_id: string
   numero_ordine: string
   data_consegna: string | null
   flag_data_scaduta: boolean
   flag_urgenza: boolean
   codice_articolo: string
   descrizione_articolo: string | null
+  categoria: string | null
   cliente: string
   cliente_id: string
   qty_ordinata: number
@@ -151,6 +171,20 @@ export interface RigaF1aResponse {
   qty_in_produzione: number
   giacenza_attuale: number
   qty_da_produrre: number
+  // Parametri produzione
+  tipo_produzione: TipoProduzione
+  multipli_taglio: number | null
+  mm_materiale: number | null
+  lunghezza_barra: number | null
+  lunghezza_effettiva: number | null
+  materia_prima_id: string | null
+  materia_prima_codice: string | null
+  capienza: number | null
+  flag_no_materia: boolean
+  // Qty suggerita
+  nr_lotti: number
+  pezzi_per_lotto: number
+  qty_suggerita: number
 }
 
 export interface ArticoloF1bResponse {
@@ -164,6 +198,42 @@ export interface ArticoloF1bResponse {
   qty_disponibile_futura: number
   qty_da_produrre_scorta: number
   scorta_calcolata_at: string | null
+  giacenza_attuale: number
+  // Parametri produzione
+  multipli_taglio: number | null
+  mm_materiale: number | null
+  lunghezza_barra: number | null
+  lunghezza_effettiva: number | null
+  materia_prima_id: string | null
+  materia_prima_codice: string | null
+  capienza: number | null
+  flag_no_materia: boolean
+  // Qty suggerita
+  nr_lotti: number
+  pezzi_per_lotto: number
+  qty_suggerita: number
+}
+
+export interface ImpegniProduzioniResponse {
+  giacenza_attuale: number
+  impegni_totali: number
+  in_produzione: number
+  qty_disponibile_futura: number
+  impegni: {
+    riga_id: string
+    numero_ordine: string
+    cliente: string
+    data_consegna: string | null
+    qty_da_evadere: number
+  }[]
+  produzioni_attive: {
+    commessa_id: string
+    stato: string
+    qty_cliente: number
+    qty_scorta: number
+    qty_totale: number
+    created_at: string | null
+  }[]
 }
 
 export interface ArticoloApprontareItem {
@@ -223,7 +293,8 @@ export interface SyncStatusResponse {
 // ─── Request types ────────────────────────────────────────────────────────────
 
 export interface GeneraCommessaRiga {
-  riga_ordine_id: string
+  riga_ordine_id: string | null
+  articolo_id?: string              // richiesto se riga_ordine_id è null (F1b scorta)
   qty_ciclo_corrente: number | null
   qty_scorta: number
 }

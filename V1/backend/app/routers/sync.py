@@ -13,7 +13,7 @@ from app.database import get_db
 from app.deps import require_admin
 from app.models.sync_log import SyncLog
 from app.sync.handlers import sync_tabella, sync_all, HANDLER_MAP
-from app.sync.easyjob import test_easyjob_connection
+from app.sync.easyjob import test_easyjob_connection, fetch_easyjob
 
 router = APIRouter(
     prefix="/api/sync",

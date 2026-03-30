@@ -11,6 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models.riga_ordine import RigaOrdine
+from app.utils import calcola_lotti
 
 
 # ---------------------------------------------------------------------------
@@ -32,6 +33,7 @@ def get_righe_da_processare(
     data_da: date | None = None,
     data_a: date | None = None,
     urgenza_only: bool = False,
+    famiglia: str | None = None,
 ) -> list[dict]:
     """
     Ritorna le righe ordine che l'ufficio produzione deve ancora processare.
@@ -57,13 +59,25 @@ def get_righe_da_processare(
             o.cliente_id,
             a.codice              AS codice_articolo,
             a.descrizione         AS descrizione_articolo,
+            a.categoria           AS categoria,
             a.giacenza_attuale    AS giacenza_attuale,
+            a.tipo_produzione     AS tipo_produzione,
+            a.multipli_taglio     AS multipli_taglio,
+            a.mm_materiale        AS mm_materiale,
+            a.lunghezza_barra     AS lunghezza_barra,
+            a.materia_prima_id    AS materia_prima_id,
+            a.capienza            AS capienza,
+            mp.codice             AS materia_prima_codice,
+            mp.lunghezza_mm       AS mp_lunghezza_mm,
+            COALESCE(a.lunghezza_barra, mp.lunghezza_mm) AS lunghezza_effettiva,
             c.ragione_sociale,
             c.nickname
         FROM righe_ordine ro
-        JOIN ordini o      ON o.id = ro.ordine_id
-        JOIN articoli a    ON a.id = ro.articolo_id
-        JOIN clienti c     ON c.id = o.cliente_id
+        JOIN ordini o           ON o.id = ro.ordine_id
+        JOIN articoli a         ON a.id = ro.articolo_id
+        LEFT JOIN materie_prime mp       ON mp.id = a.materia_prima_id
+        LEFT JOIN categorie_articolo ca  ON ca.codice = a.categoria
+        JOIN clienti c                   ON c.id = o.cliente_id
         WHERE ro.stato NOT IN ('spedito', 'chiuso')
           AND ro.qty_consegnata < ro.qty_ordinata
           AND (ro.qty_ordinata - ro.qty_disponibile - ro.qty_in_produzione) > 0
@@ -77,6 +91,7 @@ def get_righe_da_processare(
           AND (:cliente_id IS NULL OR o.cliente_id = :cliente_id)
           AND (:data_da IS NULL    OR o.data_consegna >= :data_da)
           AND (:data_a IS NULL     OR o.data_consegna <= :data_a)
+          AND (:famiglia IS NULL   OR ca.famiglia = :famiglia)
         ORDER BY o.data_consegna ASC NULLS LAST, o.numero_ordine
     """)
 
@@ -84,6 +99,7 @@ def get_righe_da_processare(
         "cliente_id": cliente_id,
         "data_da": data_da,
         "data_a": data_a,
+        "famiglia": famiglia,
     }).mappings().all()
 
     today = date.today()
@@ -111,9 +127,19 @@ def get_righe_da_processare(
         if urgenza_only and not has_urgenza:
             continue
 
+        tipo_prod = r["tipo_produzione"] or "PEZZO"
+        lunghezza_eff = r["lunghezza_effettiva"]
+        nr_lotti, pezzi_per_lotto, qty_suggerita = calcola_lotti(
+            qty_da_produrre,
+            tipo_prod,
+            r["multipli_taglio"],
+            r["mm_materiale"],
+            lunghezza_eff,
+        )
         result.append({
             "riga_ordine_id": r["riga_ordine_id"],
             "ordine_id": r["ordine_id"],
+            "articolo_id": r["articolo_id"],
             "numero_ordine": r["numero_ordine"],
             "data_consegna": r["data_consegna"],
             "flag_data_scaduta": (
@@ -122,6 +148,7 @@ def get_righe_da_processare(
             "flag_urgenza": has_urgenza,
             "codice_articolo": r["codice_articolo"],
             "descrizione_articolo": r["descrizione_articolo"],
+            "categoria": r["categoria"],
             "cliente": r["nickname"] or r["ragione_sociale"],
             "cliente_id": r["cliente_id"],
             "qty_ordinata": r["qty_ordinata"],
@@ -129,6 +156,18 @@ def get_righe_da_processare(
             "qty_in_produzione": r["qty_in_produzione"],
             "giacenza_attuale": r["giacenza_attuale"] or 0,
             "qty_da_produrre": qty_da_produrre,
+            "tipo_produzione": tipo_prod,
+            "multipli_taglio": r["multipli_taglio"],
+            "mm_materiale": r["mm_materiale"],
+            "lunghezza_barra": r["lunghezza_barra"],
+            "lunghezza_effettiva": lunghezza_eff,
+            "materia_prima_id": r["materia_prima_id"],
+            "materia_prima_codice": r["materia_prima_codice"],
+            "capienza": r["capienza"],
+            "flag_no_materia": r["materia_prima_id"] is None,
+            "nr_lotti": nr_lotti,
+            "pezzi_per_lotto": pezzi_per_lotto,
+            "qty_suggerita": qty_suggerita,
         })
 
     return result

@@ -6,6 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routers import sync as sync_router
 from app.routers import produzione as produzione_router
 from app.routers import articoli as articoli_router
+from app.routers import materie_prime as materie_prime_router
+from app.routers import categorie as categorie_router
 from app.routers import reparto as reparto_router
 from app.routers import magazzino as magazzino_router
 from app.routers import logistica as logistica_router
@@ -47,6 +49,8 @@ app.add_middleware(
 app.include_router(sync_router.router)
 app.include_router(produzione_router.router)
 app.include_router(articoli_router.router)
+app.include_router(materie_prime_router.router)
+app.include_router(categorie_router.router)
 app.include_router(reparto_router.router)
 app.include_router(magazzino_router.router)
 app.include_router(logistica_router.router)

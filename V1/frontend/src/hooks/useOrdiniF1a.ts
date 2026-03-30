@@ -8,6 +8,7 @@ interface F1aParams {
   urgenzaOnly?: boolean
   dataDa?: string
   dataA?: string
+  famiglia?: string
 }
 
 export function useOrdiniF1a(params: F1aParams = {}) {
@@ -22,6 +23,7 @@ export function useOrdiniF1a(params: F1aParams = {}) {
             urgenza_only: params.urgenzaOnly || undefined,
             data_da: params.dataDa || undefined,
             data_a: params.dataA || undefined,
+            famiglia: params.famiglia || undefined,
           },
         }
       )

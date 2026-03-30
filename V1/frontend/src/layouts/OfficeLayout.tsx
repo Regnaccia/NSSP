@@ -4,10 +4,12 @@ import { SyncIndicator } from '@/components/SyncIndicator'
 import { LogOut, BarChart3, Users, RefreshCw } from 'lucide-react'
 
 const NAV_PRODUZIONE = [
-  { to: '/produzione/f1a', label: 'Lancio ordini' },
-  { to: '/produzione/f1b', label: 'Lancio scorte' },
-  { to: '/produzione/f2',  label: 'Schedulazione' },
-  { to: '/produzione/f4',  label: 'Urgenze' },
+  { to: '/produzione/f1a',      label: 'Lancio ordini' },
+  { to: '/produzione/f1b',      label: 'Lancio scorte' },
+  { to: '/produzione/f2',       label: 'Schedulazione' },
+  { to: '/produzione/f4',       label: 'Urgenze' },
+  { to: '/produzione/articoli',     label: 'Parametri articoli' },
+  { to: '/produzione/materie-prime', label: 'Materie prime' },
 ]
 
 const NAV_LOGISTICA = [
@@ -19,8 +21,9 @@ const NAV_LOGISTICA = [
 ]
 
 const NAV_ADMIN = [
-  { to: '/admin/utenti',  label: 'Utenti', icon: Users },
-  { to: '/admin/sync',    label: 'Sync',   icon: RefreshCw },
+  { to: '/admin/utenti',     label: 'Utenti',     icon: Users },
+  { to: '/admin/sync',       label: 'Sync',       icon: RefreshCw },
+  { to: '/admin/categorie',  label: 'Famiglie',   icon: RefreshCw },
 ]
 
 function NavSection({ title, items }: { title: string; items: { to: string; label: string }[] }) {

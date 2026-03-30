@@ -9,6 +9,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import MateriaPrimaCombobox, { type MateriaPrimaOption } from '@/components/MateriaPrimaCombobox'
 import { extractApiError, formatQty } from '@/lib/utils'
 import type { ArticoloResponse } from '@/types/api'
 import { Settings2 } from 'lucide-react'
@@ -32,18 +33,26 @@ function EditArticoloDialog({
 }) {
   const queryClient = useQueryClient()
   const [capienza, setCapienza] = useState(String(articolo.capienza ?? ''))
-  const [mesiScorta, setMesiScorta] = useState(String(articolo.mesi_scorta))
-  const [tipoProduzione, setTipoProduzione] = useState(articolo.tipo_produzione)
+  const [mesiScorta, setMesiScorta] = useState(String(articolo.mesi_scorta ?? 2))
+  const [tipoProduzione, setTipoProduzione] = useState<string>(articolo.tipo_produzione)
   const [multipliTaglio, setMultipliTaglio] = useState(String(articolo.multipli_taglio ?? ''))
+  const [mmMateriale, setMmMateriale] = useState(String(articolo.mm_materiale ?? ''))
+  const [materiaPrima, setMateriaPrima] = useState<MateriaPrimaOption | null>(
+    articolo.materia_prima_id
+      ? { id: articolo.materia_prima_id, codice: articolo.materia_prima_codice ?? '', descrizione: null, lunghezza_mm: articolo.lunghezza_effettiva ?? null }
+      : null
+  )
 
   const save = useMutation({
     mutationFn: async () => {
       const body: Record<string, unknown> = {
         tipo_produzione: tipoProduzione,
         mesi_scorta: parseInt(mesiScorta) || articolo.mesi_scorta,
+        materia_prima_id: materiaPrima?.id ?? null,
       }
       if (capienza !== '') body.capienza = parseInt(capienza) || null
       if (multipliTaglio !== '') body.multipli_taglio = parseInt(multipliTaglio) || null
+      if (mmMateriale !== '') body.mm_materiale = parseInt(mmMateriale) || null
       await officeClient.patch(`/api/articoli/${articolo.id}`, body)
     },
     onSuccess: () => {
@@ -116,6 +125,41 @@ function EditArticoloDialog({
             />
           </div>
 
+          <div className="space-y-1">
+            <label className="text-sm font-medium">mm materiale (mm/pz)</label>
+            <p className="text-xs text-muted-foreground">
+              Millimetri di barra per pezzo (occorrenza + scarto). Calcolato da EasyJob se non impostato.
+            </p>
+            <input
+              type="number"
+              min={1}
+              value={mmMateriale}
+              onChange={e => setMmMateriale(e.target.value)}
+              placeholder="—"
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-sm font-medium">Materia prima</label>
+            <p className="text-xs text-muted-foreground">
+              Collegamento al semilavorato di partenza. Usato per calcolare i lotti di produzione.
+            </p>
+            <MateriaPrimaCombobox
+              value={materiaPrima}
+              onChange={setMateriaPrima}
+              placeholder="Nessuna materia prima..."
+            />
+            {materiaPrima && (
+              <p className="text-xs text-muted-foreground">
+                {materiaPrima.lunghezza_mm != null
+                  ? `Lunghezza: ${materiaPrima.lunghezza_mm} mm`
+                  : '⚠ lunghezza non configurata — impostala in Materie prime'
+                }
+              </p>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 gap-3 pt-1 text-sm border-t text-muted-foreground">
             <div>
               <div className="font-medium text-foreground">Giacenza attuale</div>
@@ -164,9 +208,9 @@ export default function Articoli() {
         <h1 className="text-xl font-semibold">Parametri articoli</h1>
         <input
           type="text"
-          placeholder="Cerca codice..."
+          placeholder="Cerca codice... (. = x)"
           value={q}
-          onChange={e => setQ(e.target.value)}
+          onChange={e => setQ(e.target.value.replace(/\./g, 'x'))}
           className="flex h-9 w-48 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
         />
       </div>
@@ -198,7 +242,7 @@ export default function Articoli() {
         <div className="border rounded-lg divide-y">
           {/* Header */}
           <div className="grid grid-cols-[1fr_2fr_80px_80px_80px_80px_40px] gap-3 px-4 py-2 bg-muted/50 text-xs font-medium text-muted-foreground">
-            <span>Codice</span>
+            <span>Codice · Mat. prima</span>
             <span>Descrizione</span>
             <span className="text-right">Giacenza</span>
             <span className="text-right">Capienza</span>
@@ -212,7 +256,19 @@ export default function Articoli() {
               key={art.id}
               className="grid grid-cols-[1fr_2fr_80px_80px_80px_80px_40px] gap-3 px-4 py-3 items-center hover:bg-muted/20 text-sm"
             >
-              <span className="font-mono font-medium">{art.codice}</span>
+              <div>
+                <div className="font-mono font-medium">{art.codice}</div>
+                {art.materia_prima_codice ? (
+                  <div className="flex items-center gap-1">
+                    <span className="font-mono text-xs text-muted-foreground">{art.materia_prima_codice}</span>
+                    {!art.lunghezza_effettiva && (
+                      <span className="text-xs text-amber-500" title="Lunghezza non configurata">⚠</span>
+                    )}
+                  </div>
+                ) : (
+                  <span className="text-xs text-amber-500">⚠ senza mat.</span>
+                )}
+              </div>
               <span className="text-muted-foreground truncate">{art.descrizione ?? '—'}</span>
               <span className="text-right">{formatQty(art.giacenza_attuale)}</span>
               <span className="text-right text-muted-foreground">

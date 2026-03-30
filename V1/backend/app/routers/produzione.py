@@ -13,6 +13,7 @@ POST /commesse/{id}/assegna — assegna macchina a commessa
 GET  /macchine              — lista macchine attive
 """
 import base64
+import csv
 import io
 import uuid
 from datetime import datetime, timezone, date
@@ -42,6 +43,7 @@ from app.schemas.commessa import (
 from app.deps import require_ruolo
 from app.services.disponibilita import get_righe_da_processare, get_qty_disponibile_futura
 from app.services.scorte import ricalcola_scorte_tutti
+from app.utils import codice_sort_key, calcola_lotti
 from app.services import commesse as svc_commesse
 from app.services.priorita import ricalcola_coda
 
@@ -62,6 +64,7 @@ def get_f1a(
     data_da: Optional[date] = Query(None),
     data_a: Optional[date] = Query(None),
     urgenza_only: bool = Query(False),
+    famiglia: Optional[str] = Query(None),   # standard | speciali | barre
     session: Session = Depends(get_db),
 ):
     """Lista righe ordine che l'ufficio produzione deve ancora processare."""
@@ -71,6 +74,7 @@ def get_f1a(
         data_da=data_da,
         data_a=data_a,
         urgenza_only=urgenza_only,
+        famiglia=famiglia,
     )
     return [RigaF1aResponse(**r) for r in righe]
 
@@ -83,55 +87,126 @@ def get_f1a(
 def genera_commesse(body: GeneraCommesseRequest, session: Session = Depends(get_db)):
     """
     Per ogni riga selezionata:
-    1. Verifica che la riga esista e sia ancora da processare
-    2. Crea una Commessa (stato=in_coda)
-    3. Genera file Excel con le righe commessa (formato Fabisogno EasyJob)
+    1. Carica dati articolo/ordine (F1a: da riga_ordine_id; F1b: da articolo_id)
+    2. Crea Commessa (stato=in_coda)
+    3. Genera Excel formato Fabisogno EasyJob
     """
-    try:
-        import openpyxl
-    except ImportError:
-        raise HTTPException(
-            status_code=500,
-            detail="openpyxl non installato — eseguire: pip install openpyxl"
-        )
+    # Mesi in italiano per la nota di consegna
+    MESI_IT = ["","GENNAIO","FEBBRAIO","MARZO","APRILE","MAGGIO","GIUGNO",
+               "LUGLIO","AGOSTO","SETTEMBRE","OTTOBRE","NOVEMBRE","DICEMBRE"]
 
     commesse_create = 0
     righe_excel = []
 
     for riga_input in body.righe:
-        # Leggi riga ordine
-        riga = session.execute(
-            text("""
-                SELECT ro.*, a.codice AS codice_articolo, a.descrizione,
-                       o.numero_ordine, o.data_consegna, c.ragione_sociale, c.nickname
-                FROM righe_ordine ro
-                JOIN articoli a ON a.id = ro.articolo_id
-                JOIN ordini o   ON o.id = ro.ordine_id
-                JOIN clienti c  ON c.id = o.cliente_id
-                WHERE ro.id = :rid
-            """),
-            {"rid": riga_input.riga_ordine_id},
-        ).mappings().fetchone()
 
-        if not riga:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Riga ordine {riga_input.riga_ordine_id} non trovata"
+        # ── F1a: riga ordine cliente ────────────────────────────────────────
+        if riga_input.riga_ordine_id:
+            row = session.execute(
+                text("""
+                    SELECT ro.id AS riga_id, ro.articolo_id,
+                           ro.qty_ordinata, ro.qty_disponibile, ro.qty_in_produzione,
+                           a.codice AS codice_articolo, a.descrizione,
+                           a.tipo_produzione, a.multipli_taglio, a.mm_materiale,
+                           a.lunghezza_barra, a.misura, a.immagine,
+                           mp.codice AS materia_prima_codice,
+                           COALESCE(a.lunghezza_barra, mp.lunghezza_mm) AS lunghezza_effettiva,
+                           o.numero_ordine, o.data_consegna,
+                           c.ragione_sociale, c.nickname
+                    FROM righe_ordine ro
+                    JOIN articoli a     ON a.id = ro.articolo_id
+                    LEFT JOIN materie_prime mp ON mp.id = a.materia_prima_id
+                    JOIN ordini o       ON o.id = ro.ordine_id
+                    JOIN clienti c      ON c.id = o.cliente_id
+                    WHERE ro.id = :rid
+                """),
+                {"rid": riga_input.riga_ordine_id},
+            ).mappings().fetchone()
+
+            if not row:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Riga ordine {riga_input.riga_ordine_id} non trovata"
+                )
+
+            qty_da_produrre = max(
+                0,
+                row["qty_ordinata"] - row["qty_disponibile"] - row["qty_in_produzione"]
             )
+            if qty_da_produrre <= 0:
+                continue
 
-        qty_da_produrre = max(
-            0,
-            riga["qty_ordinata"] - riga["qty_disponibile"] - riga["qty_in_produzione"]
+            qty_cliente = riga_input.qty_ciclo_corrente or qty_da_produrre
+            qty_scorta  = max(0, riga_input.qty_scorta)
+            articolo_id = row["articolo_id"]
+            numero_ordine = row["numero_ordine"]
+            data_consegna = row["data_consegna"]
+            cliente_label = row["nickname"] or row["ragione_sociale"]
+
+        # ── F1b: scorta pura (nessun ordine cliente) ────────────────────────
+        else:
+            if not riga_input.articolo_id:
+                raise HTTPException(
+                    status_code=422,
+                    detail="articolo_id richiesto quando riga_ordine_id è null"
+                )
+            row = session.execute(
+                text("""
+                    SELECT a.id AS articolo_id, a.codice AS codice_articolo,
+                           a.descrizione, a.tipo_produzione, a.multipli_taglio,
+                           a.mm_materiale, a.lunghezza_barra, a.misura, a.immagine,
+                           mp.codice AS materia_prima_codice,
+                           COALESCE(a.lunghezza_barra, mp.lunghezza_mm) AS lunghezza_effettiva
+                    FROM articoli a
+                    LEFT JOIN materie_prime mp ON mp.id = a.materia_prima_id
+                    WHERE a.id = :aid
+                """),
+                {"aid": riga_input.articolo_id},
+            ).mappings().fetchone()
+
+            if not row:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Articolo {riga_input.articolo_id} non trovato"
+                )
+
+            qty_cliente   = 0
+            qty_scorta    = max(0, riga_input.qty_scorta)
+            articolo_id   = riga_input.articolo_id
+            numero_ordine = None
+            data_consegna = None
+            cliente_label = None
+
+        qty_totale = qty_cliente + qty_scorta
+
+        # ── Calcolo lotti per note ──────────────────────────────────────────
+        nr_lotti, pezzi_per_lotto, _ = calcola_lotti(
+            qty_totale,
+            row["tipo_produzione"] or "PEZZO",
+            row["multipli_taglio"],
+            row["mm_materiale"],
+            row["lunghezza_effettiva"],
         )
-        if qty_da_produrre <= 0:
-            continue  # nel frattempo già coperta — skip silenzioso
+        tipo_prod = (row["tipo_produzione"] or "PEZZO").upper()
+        lunghezza  = row["lunghezza_effettiva"]
 
-        qty_cliente = qty_da_produrre
-        qty_ciclo = riga_input.qty_ciclo_corrente  # None = tutto
-        qty_scorta = max(0, riga_input.qty_scorta)
+        # Costruzione note: "2 FASCI - L 3900 - CONS: APRILE" oppure "2 PEZZI"
+        note_parts = [f"{nr_lotti} {tipo_prod}"]
+        if lunghezza:
+            note_parts.append(f"L {lunghezza}")
+        if data_consegna:
+            note_parts.append(f"CONS: {MESI_IT[data_consegna.month]}")
+        note = " - ".join(note_parts)
 
-        # Crea commessa
-        commessa_id = str(uuid.uuid4())
+        # Formato cliente nell'Excel
+        if cliente_label and qty_scorta > 0:
+            cliente_excel = f"{cliente_label} + MAGAZZINO"
+        elif cliente_label:
+            cliente_excel = cliente_label
+        else:
+            cliente_excel = "MAGAZZINO"
+
+        # ── Crea commessa ───────────────────────────────────────────────────
         session.execute(
             text("""
                 INSERT INTO commesse
@@ -142,12 +217,12 @@ def genera_commesse(body: GeneraCommesseRequest, session: Session = Depends(get_
                     (:id, :rid, :aid, :qc, :qs, :qcc, 0, 0, 'in_coda', :ts, :by)
             """),
             {
-                "id": commessa_id,
+                "id": str(uuid.uuid4()),
                 "rid": riga_input.riga_ordine_id,
-                "aid": riga["articolo_id"],
+                "aid": articolo_id,
                 "qc": qty_cliente,
                 "qs": qty_scorta,
-                "qcc": qty_ciclo,
+                "qcc": qty_totale,
                 "ts": datetime.now(timezone.utc),
                 "by": body.created_by or "produzione",
             },
@@ -155,53 +230,44 @@ def genera_commesse(body: GeneraCommesseRequest, session: Session = Depends(get_
         commesse_create += 1
 
         righe_excel.append({
-            "numero_ordine": riga["numero_ordine"],
-            "codice_articolo": riga["codice_articolo"],
-            "descrizione": riga["descrizione"] or "",
-            "cliente": riga["nickname"] or riga["ragione_sociale"],
-            "data_consegna": riga["data_consegna"],
-            "qty_cliente": qty_cliente,
-            "qty_scorta": qty_scorta,
-            "qty_totale": qty_cliente + qty_scorta,
-            "qty_ciclo": qty_ciclo or (qty_cliente + qty_scorta),
-            "note": f"Ordine {riga['numero_ordine']}",
+            "cliente":      cliente_excel,
+            "codice":       row["codice_articolo"],
+            "descrizione":  row["descrizione"] or "",
+            "immagine":     row.get("immagine") or "",
+            "misura":       row.get("misura") or "",
+            "quantita":     qty_totale,
+            "materiale":    row["materia_prima_codice"] or "",
+            "mm_materiale": row["mm_materiale"] or "",
+            "ordine":       numero_ordine or "",
+            "note":         note,
+            "user":         body.created_by or "",
         })
 
     session.commit()
 
-    # Genera Excel
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Commesse MRS"
+    # ── Genera CSV ──────────────────────────────────────────────────────────
+    buf = io.StringIO()
+    writer = csv.writer(buf, delimiter=";", quoting=csv.QUOTE_MINIMAL)
 
-    intestazioni = [
-        "N. Ordine", "Codice Articolo", "Descrizione", "Cliente",
-        "Data Consegna", "Qty Cliente", "Qty Scorta", "Qty Totale",
-        "Qty Ciclo Corrente", "Note"
-    ]
-    ws.append(intestazioni)
+    writer.writerow([
+        "cliente", "codice", "descrizione", "immagine",
+        "misura", "quantità", "materiale", "mm_materiale",
+        "ordine", "note", "user"
+    ])
 
     for r in righe_excel:
-        ws.append([
-            r["numero_ordine"],
-            r["codice_articolo"],
-            r["descrizione"],
-            r["cliente"],
-            r["data_consegna"].isoformat() if r["data_consegna"] else "",
-            r["qty_cliente"],
-            r["qty_scorta"],
-            r["qty_totale"],
-            r["qty_ciclo"],
-            r["note"],
+        des_list = str([r["descrizione"]]) if r["descrizione"] else "[]"
+        writer.writerow([
+            r["cliente"], r["codice"], des_list, r["immagine"],
+            r["misura"], r["quantita"], r["materiale"], r["mm_materiale"],
+            r["ordine"], r["note"], r["user"],
         ])
 
-    buf = io.BytesIO()
-    wb.save(buf)
-    excel_b64 = base64.b64encode(buf.getvalue()).decode()
+    csv_b64 = base64.b64encode(buf.getvalue().encode("utf-8")).decode()
 
     return GeneraCommesseResponse(
         commesse_create=commesse_create,
-        file_excel_base64=excel_b64,
+        file_csv_base64=csv_b64,
     )
 
 
@@ -220,22 +286,19 @@ def get_f1b(
     Formula da_produrre = min(gap_scorta, cap_residua) — capienza come limite fisico.
     """
     sql = text("""
-        SELECT id, codice, codice_upper, descrizione, tipo_produzione, categoria,
-               scorta_mensile, mesi_scorta, storico_sufficiente, scorta_calcolata_at,
-               capienza, giacenza_attuale
-        FROM articoli
-        WHERE storico_sufficiente = true
-          AND (
-              :famiglia IS NULL
-              OR (:famiglia = 'barre'    AND categoria IN ('M','L'))
-              OR (:famiglia = 'speciali' AND (categoria = 'S' OR codice_upper LIKE 'S%'))
-              OR (:famiglia = 'standard' AND categoria NOT IN ('M','L','S','0','Z','MC','U')
-                                        AND codice_upper NOT LIKE 'S%'
-                                        AND codice_upper NOT LIKE 'BCL%'
-                                        AND codice_upper NOT LIKE 'CERT%'
-                                        AND codice_upper NOT IN ('XS','CONF','0'))
-          )
-        ORDER BY codice
+        SELECT a.id, a.codice, a.codice_upper, a.descrizione, a.tipo_produzione, a.categoria,
+               a.scorta_mensile, a.mesi_scorta, a.storico_sufficiente, a.scorta_calcolata_at,
+               a.capienza, a.giacenza_attuale, a.multipli_taglio, a.mm_materiale,
+               a.lunghezza_barra, a.materia_prima_id,
+               mp.codice AS materia_prima_codice,
+               mp.lunghezza_mm AS mp_lunghezza_mm,
+               COALESCE(a.lunghezza_barra, mp.lunghezza_mm) AS lunghezza_effettiva
+        FROM articoli a
+        LEFT JOIN materie_prime mp      ON mp.id = a.materia_prima_id
+        LEFT JOIN categorie_articolo ca ON ca.codice = a.categoria
+        WHERE a.storico_sufficiente = true
+          AND (:famiglia IS NULL OR ca.famiglia = :famiglia)
+        ORDER BY a.codice
     """)
 
     articoli_rows = session.execute(sql, {"famiglia": famiglia}).mappings().all()
@@ -259,19 +322,41 @@ def get_f1b(
         if qty_da_produrre_scorta <= 0:
             continue
 
+        tipo_prod = art["tipo_produzione"] or "PEZZO"
+        lunghezza_eff = art["lunghezza_effettiva"]
+        nr_lotti, pezzi_per_lotto, qty_suggerita = calcola_lotti(
+            qty_da_produrre_scorta,
+            tipo_prod,
+            art["multipli_taglio"],
+            art["mm_materiale"],
+            lunghezza_eff,
+        )
         result.append(ArticoloF1bResponse(
             articolo_id=art["id"],
             codice=art["codice"],
             descrizione=art["descrizione"],
-            tipo_produzione=art["tipo_produzione"],
+            tipo_produzione=tipo_prod,
             scorta_mensile=art["scorta_mensile"],
             mesi_scorta=art["mesi_scorta"],
             target_scorta=target_scorta,
             qty_disponibile_futura=qty_disp_futura,
             qty_da_produrre_scorta=qty_da_produrre_scorta,
             scorta_calcolata_at=art["scorta_calcolata_at"],
+            giacenza_attuale=art["giacenza_attuale"] or 0,
+            multipli_taglio=art["multipli_taglio"],
+            mm_materiale=art["mm_materiale"],
+            lunghezza_barra=art["lunghezza_barra"],
+            lunghezza_effettiva=lunghezza_eff,
+            materia_prima_id=art["materia_prima_id"],
+            materia_prima_codice=art["materia_prima_codice"],
+            capienza=art["capienza"],
+            flag_no_materia=art["materia_prima_id"] is None,
+            nr_lotti=nr_lotti,
+            pezzi_per_lotto=pezzi_per_lotto,
+            qty_suggerita=qty_suggerita,
         ))
 
+    result.sort(key=lambda r: codice_sort_key(r.codice))
     return result
 
 

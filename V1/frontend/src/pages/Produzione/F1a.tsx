@@ -10,14 +10,23 @@ import { UrgenzaBadge } from '@/components/UrgenzaBadge'
 import { DataConsegnaLabel } from '@/components/DataConsegnaLabel'
 import { SyncIndicator } from '@/components/SyncIndicator'
 import { ClienteLabel } from '@/components/ClienteLabel'
+import LancioModal from '@/components/LancioModal'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { extractApiError, downloadExcel, formatQty } from '@/lib/utils'
-import type { GeneraCommesseRequest, GeneraCommesseResponse } from '@/types/api'
+import type { GeneraCommesseRequest, GeneraCommesseResponse, RigaF1aResponse } from '@/types/api'
+import { ChevronRight } from 'lucide-react'
 
 type FiltroConsegna = 'mese_corrente' | 'mese_prossimo' | 'prossimi_3_mesi' | 'scaduti' | 'tutti'
+type Famiglia = 'standard' | 'speciali' | 'barre'
+
+const FAMIGLIE: { value: Famiglia; label: string }[] = [
+  { value: 'standard', label: 'Standard' },
+  { value: 'speciali', label: 'Speciali' },
+  { value: 'barre',    label: 'Barre' },
+]
 
 function getDateRange(filtro: FiltroConsegna): { dataDa?: string; dataA?: string } {
   const oggi = new Date()
@@ -45,9 +54,13 @@ export default function F1a() {
 
   const [righeSelezionate, setRigheSelezionate] = useState<Set<string>>(new Set())
   const [filtroConsegna, setFiltroConsegna] = useState<FiltroConsegna>('mese_corrente')
+  const [famiglia, setFamiglia] = useState<Famiglia>('standard')
+  const [rigaDettaglio, setRigaDettaglio] = useState<RigaF1aResponse | null>(null)
+  // override qty per riga: riga_ordine_id → qty confermata nel modal
+  const [overrides, setOverrides] = useState<Map<string, number>>(new Map())
 
   const dateRange = useMemo(() => getDateRange(filtroConsegna), [filtroConsegna])
-  const { data: righe, isLoading, isError } = useOrdiniF1a(dateRange)
+  const { data: righe, isLoading, isError } = useOrdiniF1a({ ...dateRange, famiglia })
 
   const generaCommesse = useMutation({
     mutationFn: async (payload: GeneraCommesseRequest) => {
@@ -92,9 +105,20 @@ export default function F1a() {
     generaCommesse.mutate({
       righe: Array.from(righeSelezionate).map(id => ({
         riga_ordine_id: id,
-        qty_ciclo_corrente: null,
+        qty_ciclo_corrente: overrides.get(id) ?? null,
         qty_scorta: 0,
       })),
+      created_by: username ?? 'sistema',
+    })
+  }
+
+  const handleConfermaOverride = (rigaId: string, qty: number) => {
+    setOverrides(prev => new Map(prev).set(rigaId, qty))
+  }
+
+  const handleLanciaSubito = (riga: RigaF1aResponse, qty: number) => {
+    generaCommesse.mutate({
+      righe: [{ riga_ordine_id: riga.riga_ordine_id, qty_ciclo_corrente: qty, qty_scorta: 0 }],
       created_by: username ?? 'sistema',
     })
   }
@@ -103,6 +127,7 @@ export default function F1a() {
   if (isError) return <div className="p-6 text-red-500">Errore nel caricamento dati</div>
 
   return (
+    <>
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between gap-4">
@@ -110,6 +135,28 @@ export default function F1a() {
           <h1 className="text-xl font-semibold">Lancio ordini cliente</h1>
           <SyncIndicator tabella="ordini" />
         </div>
+      </div>
+
+      {/* Tab famiglia */}
+      <div className="flex gap-1 border-b">
+        {FAMIGLIE.map(f => (
+          <button
+            key={f.value}
+            onClick={() => { setFamiglia(f.value); setRigheSelezionate(new Set()) }}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              famiglia === f.value
+                ? 'border-primary text-primary'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Filtri + azioni */}
+      <div className="flex items-center justify-between gap-4">
+        <div />
         <div className="flex items-center gap-2">
           <Select
             value={filtroConsegna}
@@ -155,7 +202,8 @@ export default function F1a() {
             />
             <span className="flex-1">Articolo · Cliente</span>
             <span className="min-w-[80px] text-right">Consegna</span>
-            <span className="min-w-[100px] text-right">Qt da produrre</span>
+            <span className="min-w-[100px] text-right">Qt suggerita</span>
+            <span className="w-8" />
           </div>
 
           {righe.map(riga => (
@@ -170,11 +218,24 @@ export default function F1a() {
                 onClick={e => e.stopPropagation()}
               />
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-medium">{riga.codice_articolo}</span>
+                  {riga.materia_prima_codice && (
+                    <span className="font-mono text-xs text-muted-foreground">{riga.materia_prima_codice}</span>
+                  )}
                   <UrgenzaBadge attiva={riga.flag_urgenza} />
                   {riga.flag_data_scaduta && (
                     <Badge variant="destructive" className="text-xs">Scaduta</Badge>
+                  )}
+                  {riga.flag_no_materia && (
+                    <Badge variant="outline" className="text-xs text-amber-600 border-amber-400">
+                      ⚠ senza mat.
+                    </Badge>
+                  )}
+                  {!riga.flag_no_materia && !riga.lunghezza_effettiva && (
+                    <Badge variant="outline" className="text-xs text-amber-600 border-amber-400">
+                      ⚠ no lunghezza
+                    </Badge>
                   )}
                 </div>
                 <div className="text-sm text-muted-foreground truncate">
@@ -191,15 +252,58 @@ export default function F1a() {
                 />
               </div>
               <div className="text-sm text-right min-w-[100px]">
-                <span className="font-medium">{formatQty(riga.qty_da_produrre)}</span>
-                <div className="text-muted-foreground text-xs">
-                  mag: {formatQty(riga.giacenza_attuale)} · prod: {formatQty(riga.qty_in_produzione)}
-                </div>
+                {(() => {
+                  const qtyOvr = overrides.get(riga.riga_ordine_id)
+                  const qtyDef = riga.qty_suggerita || riga.qty_da_produrre
+                  const isOvr = qtyOvr != null && qtyOvr !== qtyDef
+                  return (
+                    <>
+                      <span className={`font-medium ${isOvr ? 'text-blue-600' : ''}`}>
+                        {formatQty(qtyOvr ?? qtyDef)}
+                        {isOvr && <span className="ml-1 text-xs">✎</span>}
+                      </span>
+                      <div className="text-muted-foreground text-xs">
+                        {riga.nr_lotti > 0 && <span>{riga.nr_lotti} × {riga.pezzi_per_lotto} pz · </span>}
+                        mag: {formatQty(riga.giacenza_attuale)}
+                      </div>
+                    </>
+                  )
+                })()}
               </div>
+              <button
+                onClick={e => { e.stopPropagation(); setRigaDettaglio(riga) }}
+                className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground flex-shrink-0"
+                title="Dettaglio e lancio"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
             </div>
           ))}
         </div>
       )}
     </div>
+
+    {rigaDettaglio && (
+      <LancioModal
+        articoloId={rigaDettaglio.articolo_id}
+        codice={rigaDettaglio.codice_articolo}
+        descrizione={rigaDettaglio.descrizione_articolo}
+        qtyTarget={rigaDettaglio.qty_da_produrre}
+        tipoProduzione={rigaDettaglio.tipo_produzione}
+        multipliTaglio={rigaDettaglio.multipli_taglio}
+        mmMateriale={rigaDettaglio.mm_materiale}
+        lunghezzaBarra={rigaDettaglio.lunghezza_barra}
+        lunghezzaEffettiva={rigaDettaglio.lunghezza_effettiva}
+        materiaPrimaId={rigaDettaglio.materia_prima_id}
+        materiaPrimaCodice={rigaDettaglio.materia_prima_codice}
+        capienza={rigaDettaglio.capienza}
+        flagNoMateria={rigaDettaglio.flag_no_materia}
+        qtyOverride={overrides.get(rigaDettaglio.riga_ordine_id)}
+        onConferma={qty => handleConfermaOverride(rigaDettaglio.riga_ordine_id, qty)}
+        onLanciaSubito={qty => handleLanciaSubito(rigaDettaglio, qty)}
+        onClose={() => setRigaDettaglio(null)}
+      />
+    )}
+    </>
   )
 }
