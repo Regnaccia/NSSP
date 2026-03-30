@@ -1,0 +1,24 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: mrs_v1_postgres
+    restart: unless-stopped
+    env_file:
+      - ../env/postgres.env
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - mrs_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+
+networks:
+  mrs_network:
